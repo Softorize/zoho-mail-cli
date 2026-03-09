@@ -86,9 +86,10 @@ pub fn load(allocator: std.mem.Allocator) ConfigError!Config {
         return Config{};
     defer file.close();
 
-    const content = file.readToEndAlloc(allocator, 1024 * 64) catch
+    // Use page_allocator so the buffer won't move when arena resizes.
+    // parseFromSliceLeaky returns slices pointing into this buffer.
+    const content = file.readToEndAlloc(std.heap.page_allocator, 1024 * 64) catch
         return ConfigError.ConfigParseError;
-    defer allocator.free(content);
 
     return std.json.parseFromSliceLeaky(
         Config,

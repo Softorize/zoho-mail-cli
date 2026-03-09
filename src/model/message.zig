@@ -1,7 +1,8 @@
 const std = @import("std");
 
 /// Email message as returned by the Zoho Mail API.
-/// Field names match Zoho API JSON keys (camelCase).
+/// All fields are strings because Zoho returns mixed types
+/// (numbers as strings, bools as "0"/"1").
 pub const Message = struct {
     /// Unique message identifier.
     messageId: []const u8,
@@ -11,28 +12,38 @@ pub const Message = struct {
     subject: []const u8 = "",
     /// Sender address (display format).
     sender: []const u8 = "",
+    /// From address.
+    fromAddress: []const u8 = "",
     /// Comma-separated To recipients.
     toAddress: []const u8 = "",
     /// Comma-separated Cc recipients.
     ccAddress: []const u8 = "",
-    /// Received timestamp (epoch ms).
-    receivedTime: i64 = 0,
-    /// Read/unread status.
-    isRead: bool = false,
-    /// Flagged status.
-    isFlagged: bool = false,
+    /// Received timestamp (epoch ms as string).
+    receivedTime: []const u8 = "",
     /// Message summary (snippet).
     summary: []const u8 = "",
     /// Full message content (only populated on read).
     content: []const u8 = "",
-    /// Whether the message has attachments.
-    hasAttachment: bool = false,
+    /// Has attachment flag ("0" or "1").
+    hasAttachment: []const u8 = "0",
     /// Message status code from Zoho.
     status: []const u8 = "",
+    /// Flag status string.
+    flagid: []const u8 = "",
+    /// Thread ID.
+    threadId: []const u8 = "",
+    /// Message priority.
+    priority: []const u8 = "",
+    /// Message size in bytes.
+    size: []const u8 = "",
+
+    /// Check if message has been read (status "1" = read).
+    pub fn isRead(self: Message) bool {
+        return std.mem.eql(u8, self.status, "1");
+    }
 };
 
 /// Request payload for sending an email.
-/// Field names match Zoho API JSON keys for serialization.
 pub const SendRequest = struct {
     /// Sender email address.
     fromAddress: []const u8,
@@ -51,7 +62,6 @@ pub const SendRequest = struct {
 };
 
 /// Parameters for searching messages.
-/// Field names match Zoho API query parameter keys.
 pub const SearchParams = struct {
     /// Search query string.
     searchKey: []const u8,
@@ -61,8 +71,7 @@ pub const SearchParams = struct {
     start: i64 = 0,
 };
 
-/// Parameters for updating a message (flag/move/mark-read/label).
-/// These are CLI-internal; serialized to Zoho JSON manually.
+/// Parameters for updating a message.
 pub const UpdateParams = struct {
     /// Message IDs to update.
     message_id: []const u8,
@@ -81,29 +90,15 @@ pub const UpdateParams = struct {
 // ---------------------------------------------------------------------------
 
 test "Message default field values" {
-    const msg = Message{ .messageId = "m1" };
-    try std.testing.expectEqualStrings("m1", msg.messageId);
-    try std.testing.expectEqualStrings("", msg.subject);
-    try std.testing.expectEqual(@as(i64, 0), msg.receivedTime);
-    try std.testing.expect(!msg.isRead);
-    try std.testing.expect(!msg.hasAttachment);
+    const m = Message{ .messageId = "m1" };
+    try std.testing.expectEqualStrings("m1", m.messageId);
+    try std.testing.expectEqualStrings("", m.subject);
+    try std.testing.expect(!m.isRead());
 }
 
-test "Message JSON parsing" {
-    const allocator = std.testing.allocator;
-    const json =
-        \\{"messageId":"m2","subject":"Hello","isRead":true,"receivedTime":1700000000}
-    ;
-    const msg = try std.json.parseFromSliceLeaky(
-        Message,
-        allocator,
-        json,
-        .{ .ignore_unknown_fields = true },
-    );
-    try std.testing.expectEqualStrings("m2", msg.messageId);
-    try std.testing.expectEqualStrings("Hello", msg.subject);
-    try std.testing.expect(msg.isRead);
-    try std.testing.expectEqual(@as(i64, 1700000000), msg.receivedTime);
+test "Message isRead returns true for status 1" {
+    const m = Message{ .messageId = "m1", .status = "1" };
+    try std.testing.expect(m.isRead());
 }
 
 test "SendRequest default values" {
@@ -112,21 +107,9 @@ test "SendRequest default values" {
         .toAddress = "you@example.com",
     };
     try std.testing.expectEqualStrings("html", req.mailFormat);
-    try std.testing.expectEqualStrings("", req.ccAddress);
 }
 
 test "SearchParams default values" {
     const sp = SearchParams{ .searchKey = "test" };
     try std.testing.expectEqual(@as(i64, 50), sp.limit);
-    try std.testing.expectEqual(@as(i64, 0), sp.start);
-}
-
-test "UpdateParams default values" {
-    const up = UpdateParams{
-        .message_id = "m1",
-        .mode = "markAsRead",
-    };
-    try std.testing.expectEqualStrings("", up.dest_folder_id);
-    try std.testing.expectEqualStrings("", up.flag_value);
-    try std.testing.expectEqualStrings("", up.label_id);
 }

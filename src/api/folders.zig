@@ -36,7 +36,10 @@ pub fn listFolders(
         allocator,
         response.body,
         .{ .ignore_unknown_fields = true },
-    ) catch return error.ParseError;
+    ) catch {
+        std.log.err("folder parse fail. body[0..200]: {s}", .{response.body[0..@min(response.body.len, 200)]});
+        return error.ParseError;
+    };
 
     return parsed.data;
 }

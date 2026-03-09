@@ -42,9 +42,9 @@ pub fn loadTokens(allocator: std.mem.Allocator) AuthError!?TokenData {
     const file = std.fs.openFileAbsolute(path, .{}) catch return null;
     defer file.close();
 
-    // Do NOT free content — parseFromSliceLeaky returns slices into it.
-    // The arena allocator will free everything when the command completes.
-    const content = file.readToEndAlloc(allocator, 64 * 1024) catch
+    // Use page_allocator so the buffer won't move when the arena resizes.
+    // parseFromSliceLeaky returns slices pointing into this buffer.
+    const content = file.readToEndAlloc(std.heap.page_allocator, 64 * 1024) catch
         return AuthError.TokenStorageError;
 
     return std.json.parseFromSliceLeaky(
@@ -92,7 +92,10 @@ pub fn getAccessToken(
     if (tokens.access_token.len == 0) return AuthError.NotAuthenticated;
 
     const now = std.time.timestamp();
-    if (now < tokens.expires_at) return tokens.access_token;
+    if (now < tokens.expires_at) {
+        // Dupe to avoid use-after-free when arena memory gets reused
+        return allocator.dupe(u8, tokens.access_token) catch return AuthError.NotAuthenticated;
+    }
 
     // Token expired, try refresh
     if (tokens.refresh_token.len == 0) return AuthError.NoRefreshToken;

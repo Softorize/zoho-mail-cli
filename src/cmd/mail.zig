@@ -3,6 +3,7 @@ const Config = @import("../config.zig").Config;
 const root = @import("root.zig");
 const output = @import("../output.zig");
 const api = @import("../api/messages.zig");
+const folders_api = @import("../api/folders.zig");
 const mail_update = @import("mail_update.zig");
 const mail_send = @import("mail_send.zig");
 const msg = @import("../model/message.zig");
@@ -44,7 +45,7 @@ fn isUpdateSubcmd(s: []const u8) bool {
 
 /// List messages in a folder.
 pub fn listMail(allocator: std.mem.Allocator, cfg: Config, flags: root.GlobalFlags, args: *std.process.ArgIterator) root.CliError!void {
-    var folder_id: []const u8 = "INBOX";
+    var folder_id: ?[]const u8 = null;
     var limit: i64 = 20;
     var start: i64 = 0;
     while (args.next()) |arg| {
@@ -59,7 +60,14 @@ pub fn listMail(allocator: std.mem.Allocator, cfg: Config, flags: root.GlobalFla
         }
     }
     const aid = acctId(cfg, flags);
-    const msgs = api.listMessages(allocator, cfg, aid, folder_id, start, limit) catch return error.CommandFailed;
+    const fid = folder_id orelse resolveInbox(allocator, cfg, aid) orelse {
+        output.printError("Could not resolve inbox folder.") catch {};
+        return error.CommandFailed;
+    };
+    const msgs = api.listMessages(allocator, cfg, aid, fid, start, limit) catch {
+        output.printError("Failed to list messages.") catch {};
+        return error.CommandFailed;
+    };
     printMsgList(allocator, cfg, flags, msgs) catch return error.CommandFailed;
 }
 
@@ -108,9 +116,20 @@ pub fn readMsg(allocator: std.mem.Allocator, cfg: Config, flags: root.GlobalFlag
     output.printDetail("To", m.toAddress) catch {};
     output.printDetail("Subject", m.subject) catch {};
     var tb: [32]u8 = undefined;
-    output.printDetail("Date", output.formatTimestamp(m.receivedTime, &tb)) catch {};
+    const rts = std.fmt.parseInt(i64, m.receivedTime, 10) catch 0;
+    output.printDetail("Date", output.formatTimestamp(rts, &tb)) catch {};
     output.printHeader("Content") catch {};
     std.fs.File.stdout().deprecatedWriter().print("{s}\n", .{m.content}) catch {};
+}
+
+/// Resolve the Inbox folder ID by listing folders and finding "Inbox".
+fn resolveInbox(allocator: std.mem.Allocator, cfg: Config, aid: []const u8) ?[]const u8 {
+    const folders = folders_api.listFolders(allocator, cfg, aid) catch return null;
+    for (folders) |f| {
+        if (std.ascii.eqlIgnoreCase(f.folderName, "inbox")) return f.folderId;
+    }
+    if (folders.len > 0) return folders[0].folderId;
+    return null;
 }
 
 /// Resolve account ID from flags or config.
@@ -135,10 +154,11 @@ fn printMsgList(allocator: std.mem.Allocator, cfg: Config, flags: root.GlobalFla
         const row = try allocator.alloc([]const u8, 5);
         row[0] = m.messageId;
         row[1] = m.subject;
-        row[2] = m.sender;
+        row[2] = if (m.sender.len > 0) m.sender else m.fromAddress;
         var tb: [32]u8 = undefined;
-        row[3] = output.formatTimestamp(m.receivedTime, &tb);
-        row[4] = if (m.isRead) "yes" else "no";
+        const ts = std.fmt.parseInt(i64, m.receivedTime, 10) catch 0;
+        row[3] = output.formatTimestamp(ts, &tb);
+        row[4] = if (m.isRead()) "yes" else "no";
         try rows.append(allocator, row);
     }
     try output.printTable(&columns, rows.items);

@@ -36,7 +36,10 @@ pub fn execute(allocator: std.mem.Allocator, cfg: Config, flags: root.GlobalFlag
 /// List all folders for the active account.
 pub fn list(allocator: std.mem.Allocator, cfg: Config, flags: root.GlobalFlags) root.CliError!void {
     const aid = acctId(cfg, flags);
-    const folders = api.listFolders(allocator, cfg, aid) catch return error.CommandFailed;
+    const folders = api.listFolders(allocator, cfg, aid) catch |e| {
+        std.log.err("listFolders failed: {}", .{e});
+        return error.CommandFailed;
+    };
     const fmt = flags.format orelse cfg.output_format;
     if (fmt == .json) {
         output.printJson(allocator, folders) catch return error.CommandFailed;
