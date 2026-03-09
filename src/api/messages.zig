@@ -25,7 +25,7 @@ pub fn listMessages(
     start: i64,
     limit: i64,
 ) MessageApiError![]const msg.Message {
-    const path = std.fmt.allocPrint(allocator, "/api/accounts/{s}/messages/view", .{account_id}) catch return error.ApiRequestFailed;
+    const path = std.fmt.allocPrint(allocator, "accounts/{s}/messages/view", .{account_id}) catch return error.ApiRequestFailed;
     const query = std.fmt.allocPrint(allocator, "folderId={s}&start={d}&limit={d}", .{ folder_id, start, limit }) catch return error.ApiRequestFailed;
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
     const url = http.buildUrl(allocator, config.region, path, query) catch return error.ApiRequestFailed;
@@ -41,7 +41,7 @@ pub fn searchMessages(
     account_id: []const u8,
     params: msg.SearchParams,
 ) MessageApiError![]const msg.Message {
-    const path = std.fmt.allocPrint(allocator, "/api/accounts/{s}/messages/search", .{account_id}) catch return error.ApiRequestFailed;
+    const path = std.fmt.allocPrint(allocator, "accounts/{s}/messages/search", .{account_id}) catch return error.ApiRequestFailed;
     const query = std.fmt.allocPrint(allocator, "searchKey={s}&start={d}&limit={d}", .{ params.searchKey, params.start, params.limit }) catch return error.ApiRequestFailed;
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
     const url = http.buildUrl(allocator, config.region, path, query) catch return error.ApiRequestFailed;
@@ -58,7 +58,7 @@ pub fn getMessage(
     folder_id: []const u8,
     message_id: []const u8,
 ) MessageApiError!msg.Message {
-    const path = std.fmt.allocPrint(allocator, "/api/accounts/{s}/folders/{s}/messages/{s}/content", .{ account_id, folder_id, message_id }) catch return error.ApiRequestFailed;
+    const path = std.fmt.allocPrint(allocator, "accounts/{s}/folders/{s}/messages/{s}/content", .{ account_id, folder_id, message_id }) catch return error.ApiRequestFailed;
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
     const url = http.buildUrl(allocator, config.region, path, null) catch return error.ApiRequestFailed;
     const response = try http.get(allocator, url, token);
@@ -73,7 +73,7 @@ pub fn sendMessage(
     account_id: []const u8,
     request: msg.SendRequest,
 ) MessageApiError!msg.Message {
-    const path = std.fmt.allocPrint(allocator, "/api/accounts/{s}/messages", .{account_id}) catch return error.ApiRequestFailed;
+    const path = std.fmt.allocPrint(allocator, "accounts/{s}/messages", .{account_id}) catch return error.ApiRequestFailed;
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
     const url = http.buildUrl(allocator, config.region, path, null) catch return error.ApiRequestFailed;
     const body = std.json.Stringify.valueAlloc(allocator, request, .{}) catch return error.ApiRequestFailed;
@@ -89,7 +89,7 @@ pub fn deleteMessage(
     folder_id: []const u8,
     message_id: []const u8,
 ) MessageApiError!void {
-    const path = std.fmt.allocPrint(allocator, "/api/accounts/{s}/folders/{s}/messages/{s}", .{ account_id, folder_id, message_id }) catch return error.ApiRequestFailed;
+    const path = std.fmt.allocPrint(allocator, "accounts/{s}/folders/{s}/messages/{s}", .{ account_id, folder_id, message_id }) catch return error.ApiRequestFailed;
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
     const url = http.buildUrl(allocator, config.region, path, null) catch return error.ApiRequestFailed;
     _ = try http.delete(allocator, url, token);
@@ -102,7 +102,7 @@ pub fn updateMessage(
     account_id: []const u8,
     params: msg.UpdateParams,
 ) MessageApiError!void {
-    const path = std.fmt.allocPrint(allocator, "/api/accounts/{s}/updatemessage", .{account_id}) catch return error.ApiRequestFailed;
+    const path = std.fmt.allocPrint(allocator, "accounts/{s}/updatemessage", .{account_id}) catch return error.ApiRequestFailed;
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
     const url = http.buildUrl(allocator, config.region, path, null) catch return error.ApiRequestFailed;
     const body = buildUpdateBody(allocator, params) catch return error.ApiRequestFailed;

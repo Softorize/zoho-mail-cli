@@ -21,7 +21,7 @@ pub fn listAccounts(
 ) AccountApiError![]const Account {
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
 
-    const url = http.buildUrl(allocator, config.region, "/api/accounts", null) catch
+    const url = http.buildUrl(allocator, config.region, "accounts", null) catch
         return error.ApiRequestFailed;
 
     const response = try http.get(allocator, url, token);
@@ -45,7 +45,7 @@ pub fn getAccount(
 ) AccountApiError!Account {
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
 
-    const path = std.fmt.allocPrint(allocator, "/api/accounts/{s}", .{account_id}) catch
+    const path = std.fmt.allocPrint(allocator, "accounts/{s}", .{account_id}) catch
         return error.ApiRequestFailed;
 
     const url = http.buildUrl(allocator, config.region, path, null) catch

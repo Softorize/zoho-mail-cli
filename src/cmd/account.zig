@@ -71,9 +71,9 @@ pub fn list(
     for (accounts) |acct| {
         const row = allocator.alloc([]const u8, 4) catch return error.CommandFailed;
         row[0] = acct.accountId;
-        row[1] = acct.emailAddress;
+        row[1] = acct.mailboxAddress;
         row[2] = acct.displayName;
-        row[3] = if (acct.primary) "yes" else "no";
+        row[3] = if (acct.isDefaultAccount) "yes" else "no";
         rows.append(allocator, row) catch return error.CommandFailed;
     }
 
@@ -98,12 +98,12 @@ pub fn info(
 
     output.printHeader("Account Details") catch {};
     output.printDetail("ID", acct.accountId) catch {};
-    output.printDetail("Email", acct.emailAddress) catch {};
+    output.printDetail("Email", acct.mailboxAddress) catch {};
     output.printDetail("Name", acct.displayName) catch {};
-    output.printDetail("Type", acct.type) catch {};
-    output.printDetail("Primary", if (acct.primary) "yes" else "no") catch {};
-    output.printDetail("Incoming", acct.incomingServer) catch {};
-    output.printDetail("Outgoing", acct.outgoingServer) catch {};
+    output.printDetail("Type", acct.role) catch {};
+    output.printDetail("Primary", if (acct.isDefaultAccount) "yes" else "no") catch {};
+    output.printDetail("Incoming", acct.accountName) catch {};
+    output.printDetail("Outgoing", acct.mailboxStatus) catch {};
 }
 
 /// Set the default active account.

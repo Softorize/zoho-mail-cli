@@ -19,7 +19,7 @@ pub fn listMyTasks(
     config: Config,
 ) TaskApiError![]const Task {
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
-    const url = http.buildUrl(allocator, config.region, "/api/tasks/me", null) catch return error.ApiRequestFailed;
+    const url = http.buildUrl(allocator, config.region, "tasks/me", null) catch return error.ApiRequestFailed;
     const response = try http.get(allocator, url, token);
     return parseList(allocator, response.body);
 }
@@ -31,7 +31,7 @@ pub fn listGroupTasks(
     config: Config,
     group_id: []const u8,
 ) TaskApiError![]const Task {
-    const path = std.fmt.allocPrint(allocator, "/api/tasks/groups/{s}", .{group_id}) catch return error.ApiRequestFailed;
+    const path = std.fmt.allocPrint(allocator, "tasks/groups/{s}", .{group_id}) catch return error.ApiRequestFailed;
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
     const url = http.buildUrl(allocator, config.region, path, null) catch return error.ApiRequestFailed;
     const response = try http.get(allocator, url, token);
@@ -45,7 +45,7 @@ pub fn getTask(
     config: Config,
     task_id: []const u8,
 ) TaskApiError!Task {
-    const path = std.fmt.allocPrint(allocator, "/api/tasks/me/{s}", .{task_id}) catch return error.ApiRequestFailed;
+    const path = std.fmt.allocPrint(allocator, "tasks/me/{s}", .{task_id}) catch return error.ApiRequestFailed;
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
     const url = http.buildUrl(allocator, config.region, path, null) catch return error.ApiRequestFailed;
     const response = try http.get(allocator, url, token);
@@ -62,7 +62,7 @@ pub fn createTask(
     priority: i32,
 ) TaskApiError!Task {
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
-    const url = http.buildUrl(allocator, config.region, "/api/tasks/me", null) catch return error.ApiRequestFailed;
+    const url = http.buildUrl(allocator, config.region, "tasks/me", null) catch return error.ApiRequestFailed;
     const body = std.json.Stringify.valueAlloc(allocator, .{
         .title = title,
         .notes = notes,
@@ -83,7 +83,7 @@ pub fn updateTask(
     status: ?[]const u8,
     priority: ?i32,
 ) TaskApiError!Task {
-    const path = std.fmt.allocPrint(allocator, "/api/tasks/me/{s}", .{task_id}) catch return error.ApiRequestFailed;
+    const path = std.fmt.allocPrint(allocator, "tasks/me/{s}", .{task_id}) catch return error.ApiRequestFailed;
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
     const url = http.buildUrl(allocator, config.region, path, null) catch return error.ApiRequestFailed;
     const body = buildUpdateBody(allocator, title, notes, status, priority) catch return error.ApiRequestFailed;
@@ -97,7 +97,7 @@ pub fn deleteTask(
     config: Config,
     task_id: []const u8,
 ) TaskApiError!void {
-    const path = std.fmt.allocPrint(allocator, "/api/tasks/me/{s}", .{task_id}) catch return error.ApiRequestFailed;
+    const path = std.fmt.allocPrint(allocator, "tasks/me/{s}", .{task_id}) catch return error.ApiRequestFailed;
     const token = auth.getAccessToken(allocator, config) catch return error.ApiRequestFailed;
     const url = http.buildUrl(allocator, config.region, path, null) catch return error.ApiRequestFailed;
     _ = try http.delete(allocator, url, token);

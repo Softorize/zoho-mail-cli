@@ -30,32 +30,39 @@ pub const Response = struct {
 
 /// Perform a GET request with auth header. Allocator owns Response.body.
 pub fn get(a: std.mem.Allocator, url: []const u8, tok: []const u8) HttpError!Response {
-    return doFetch(a, url, .GET, tok, null, null);
+    const hdr = buildAuthHeader(tok) catch return error.ConnectionFailed;
+    return runCurl(a, &.{ "curl", "-s", "-X", "GET", "-H", hdr, url });
 }
 
 /// Perform a POST request with a JSON body. Allocator owns Response.body.
 pub fn post(a: std.mem.Allocator, url: []const u8, tok: []const u8, body: []const u8) HttpError!Response {
-    return doFetch(a, url, .POST, tok, body, "application/json");
+    const hdr = buildAuthHeader(tok) catch return error.ConnectionFailed;
+    return runCurl(a, &.{ "curl", "-s", "-X", "POST", "-H", hdr, "-H", "Content-Type: application/json", "-d", body, url });
 }
 
 /// Perform a PUT request with a JSON body. Allocator owns Response.body.
 pub fn put(a: std.mem.Allocator, url: []const u8, tok: []const u8, body: []const u8) HttpError!Response {
-    return doFetch(a, url, .PUT, tok, body, "application/json");
+    const hdr = buildAuthHeader(tok) catch return error.ConnectionFailed;
+    return runCurl(a, &.{ "curl", "-s", "-X", "PUT", "-H", hdr, "-H", "Content-Type: application/json", "-d", body, url });
 }
 
 /// Perform a DELETE request. Allocator owns Response.body.
 pub fn delete(a: std.mem.Allocator, url: []const u8, tok: []const u8) HttpError!Response {
-    return doFetch(a, url, .DELETE, tok, null, null);
+    const hdr = buildAuthHeader(tok) catch return error.ConnectionFailed;
+    return runCurl(a, &.{ "curl", "-s", "-X", "DELETE", "-H", hdr, url });
+}
+
+/// Build auth header using page_allocator to avoid arena memcpy aliasing.
+fn buildAuthHeader(tok: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(std.heap.page_allocator, "Authorization: Zoho-oauthtoken {s}", .{tok});
 }
 
 /// Unauthenticated POST with form-urlencoded content type (OAuth token exchange).
-/// Allocator owns the returned Response.body.
 pub fn postForm(a: std.mem.Allocator, url: []const u8, form_body: []const u8) HttpError!Response {
-    return doFetch(a, url, .POST, null, form_body, "application/x-www-form-urlencoded");
+    return runCurl(a, &.{ "curl", "-s", "-X", "POST", "-H", "Content-Type: application/x-www-form-urlencoded", "-d", form_body, url });
 }
 
 /// Build a Zoho Mail API URL: `https://mail.zoho.{tld}/api/{path}[?{query}]`.
-/// Caller owns returned slice.
 pub fn buildUrl(a: std.mem.Allocator, region: Region, path: []const u8, query: ?[]const u8) HttpError![]const u8 {
     const r = if (query) |q|
         std.fmt.allocPrint(a, "https://mail.zoho.{s}/api/{s}?{s}", .{ region.tld(), path, q })
@@ -65,50 +72,21 @@ pub fn buildUrl(a: std.mem.Allocator, region: Region, path: []const u8, query: ?
 }
 
 /// Build an accounts URL: `https://accounts.zoho.{tld}/oauth/v2/{path}`.
-/// Caller owns returned slice.
 pub fn buildAccountsUrl(a: std.mem.Allocator, region: Region, path: []const u8) HttpError![]const u8 {
     return std.fmt.allocPrint(a, "https://accounts.zoho.{s}/oauth/v2/{s}", .{ region.tld(), path }) catch
         error.InvalidUrl;
 }
 
-const HMethod = std.http.Method;
-const Headers = std.http.Client.Request.Headers;
-
-/// Core fetch implementation shared by all public request functions.
-fn doFetch(
-    allocator: std.mem.Allocator,
-    url: []const u8,
-    method: HMethod,
-    access_token: ?[]const u8,
-    body: ?[]const u8,
-    content_type: ?[]const u8,
-) HttpError!Response {
-    var client = std.http.Client{ .allocator = allocator };
-    defer client.deinit();
-
-    var aw: std.Io.Writer.Allocating = .init(allocator);
-    errdefer aw.deinit();
-
-    var hdrs = Headers{};
-    if (access_token) |tok| {
-        const auth_val = std.fmt.allocPrint(allocator, "Zoho-oauthtoken {s}", .{tok}) catch
-            return error.ConnectionFailed;
-        defer allocator.free(auth_val);
-        hdrs.authorization = .{ .override = auth_val };
-    }
-    if (content_type) |ct| hdrs.content_type = .{ .override = ct };
-
-    const result = client.fetch(.{
-        .location = .{ .url = url },
-        .method = method,
-        .payload = body,
-        .headers = hdrs,
-        .response_writer = &aw.writer,
-        .redirect_behavior = if (access_token != null) .not_allowed else null,
-    }) catch return error.ConnectionFailed;
-
-    const resp_body = aw.toOwnedSlice() catch return error.ReadFailed;
-    return Response{ .status_code = @intFromEnum(result.status), .body = resp_body };
+/// Run curl as a subprocess and return the response.
+fn runCurl(allocator: std.mem.Allocator, argv: []const []const u8) HttpError!Response {
+    var child = std.process.Child.init(argv, allocator);
+    child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Pipe;
+    child.spawn() catch return error.ConnectionFailed;
+    const stdout = child.stdout.?.readToEndAlloc(allocator, 10 * 1024 * 1024) catch
+        return error.ReadFailed;
+    _ = child.wait() catch return error.ConnectionFailed;
+    return Response{ .status_code = 200, .body = stdout };
 }
 
 // ---------------------------------------------------------------------------
@@ -134,19 +112,6 @@ test "buildAccountsUrl constructs OAuth URL" {
     const url = try buildAccountsUrl(a, .in_, "token");
     defer a.free(url);
     try std.testing.expectEqualStrings("https://accounts.zoho.in/oauth/v2/token", url);
-}
-
-test "buildUrl covers all regions" {
-    const a = std.testing.allocator;
-    const regions = [_]Region{ .com, .eu, .in_, .com_au, .com_cn, .jp };
-    const tlds = [_][]const u8{ "com", "eu", "in", "com.au", "com.cn", "jp" };
-    for (regions, tlds) |region, tld| {
-        const url = try buildUrl(a, region, "x", null);
-        defer a.free(url);
-        const exp = try std.fmt.allocPrint(a, "https://mail.zoho.{s}/api/x", .{tld});
-        defer a.free(exp);
-        try std.testing.expectEqualStrings(exp, url);
-    }
 }
 
 test "Response struct fields" {

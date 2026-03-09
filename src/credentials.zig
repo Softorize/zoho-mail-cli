@@ -21,10 +21,14 @@ pub const redirect_uri = "http://localhost:8749/callback";
 /// OAuth scopes requested during authorization.
 pub const scopes = "ZohoMail.messages.ALL," ++
     "ZohoMail.folders.ALL," ++
-    "ZohoMail.labels.ALL," ++
+    "ZohoMail.tags.ALL," ++
     "ZohoMail.accounts.READ," ++
     "ZohoMail.tasks.ALL," ++
-    "ZohoMail.organization.ALL";
+    "ZohoMail.notes.ALL," ++
+    "ZohoMail.links.ALL," ++
+    "ZohoMail.organization.accounts.ALL," ++
+    "ZohoMail.organization.domains.ALL," ++
+    "ZohoMail.organization.groups.ALL";
 
 /// Check whether credentials have been configured.
 pub fn isConfigured() bool {

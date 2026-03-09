@@ -42,9 +42,10 @@ pub fn loadTokens(allocator: std.mem.Allocator) AuthError!?TokenData {
     const file = std.fs.openFileAbsolute(path, .{}) catch return null;
     defer file.close();
 
+    // Do NOT free content — parseFromSliceLeaky returns slices into it.
+    // The arena allocator will free everything when the command completes.
     const content = file.readToEndAlloc(allocator, 64 * 1024) catch
         return AuthError.TokenStorageError;
-    defer allocator.free(content);
 
     return std.json.parseFromSliceLeaky(
         TokenData,

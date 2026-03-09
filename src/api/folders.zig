@@ -21,7 +21,7 @@ pub fn listFolders(
 ) FolderApiError![]const Folder {
     const path = std.fmt.allocPrint(
         allocator,
-        "/api/accounts/{s}/folders",
+        "accounts/{s}/folders",
         .{account_id},
     ) catch return error.ApiRequestFailed;
 
@@ -51,7 +51,7 @@ pub fn getFolder(
 ) FolderApiError!Folder {
     const path = std.fmt.allocPrint(
         allocator,
-        "/api/accounts/{s}/folders/{s}",
+        "accounts/{s}/folders/{s}",
         .{ account_id, folder_id },
     ) catch return error.ApiRequestFailed;
 
@@ -82,7 +82,7 @@ pub fn createFolder(
 ) FolderApiError!Folder {
     const path = std.fmt.allocPrint(
         allocator,
-        "/api/accounts/{s}/folders",
+        "accounts/{s}/folders",
         .{account_id},
     ) catch return error.ApiRequestFailed;
 
@@ -118,7 +118,7 @@ pub fn renameFolder(
 ) FolderApiError!Folder {
     const path = std.fmt.allocPrint(
         allocator,
-        "/api/accounts/{s}/folders/{s}",
+        "accounts/{s}/folders/{s}",
         .{ account_id, folder_id },
     ) catch return error.ApiRequestFailed;
 
@@ -151,7 +151,7 @@ pub fn deleteFolder(
 ) FolderApiError!void {
     const path = std.fmt.allocPrint(
         allocator,
-        "/api/accounts/{s}/folders/{s}",
+        "accounts/{s}/folders/{s}",
         .{ account_id, folder_id },
     ) catch return error.ApiRequestFailed;
 

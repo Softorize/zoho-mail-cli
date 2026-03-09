@@ -21,7 +21,7 @@ pub fn listLabels(
 ) LabelApiError![]const Label {
     const path = std.fmt.allocPrint(
         allocator,
-        "/api/accounts/{s}/labels",
+        "accounts/{s}/labels",
         .{account_id},
     ) catch return error.ApiRequestFailed;
 
@@ -52,7 +52,7 @@ pub fn createLabel(
 ) LabelApiError!Label {
     const path = std.fmt.allocPrint(
         allocator,
-        "/api/accounts/{s}/labels",
+        "accounts/{s}/labels",
         .{account_id},
     ) catch return error.ApiRequestFailed;
 
@@ -88,7 +88,7 @@ pub fn renameLabel(
 ) LabelApiError!Label {
     const path = std.fmt.allocPrint(
         allocator,
-        "/api/accounts/{s}/labels/{s}",
+        "accounts/{s}/labels/{s}",
         .{ account_id, label_id },
     ) catch return error.ApiRequestFailed;
 
@@ -121,7 +121,7 @@ pub fn deleteLabel(
 ) LabelApiError!void {
     const path = std.fmt.allocPrint(
         allocator,
-        "/api/accounts/{s}/labels/{s}",
+        "accounts/{s}/labels/{s}",
         .{ account_id, label_id },
     ) catch return error.ApiRequestFailed;
 

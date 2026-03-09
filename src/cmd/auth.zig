@@ -38,11 +38,11 @@ pub fn execute(
     }
 }
 
-/// Perform browser-based OAuth login flow.
-/// Opens browser -> user authorizes -> CLI captures callback -> exchanges code.
+/// Perform OAuth login flow.
+/// Opens browser for authorization, user pastes the redirect URL back.
 pub fn login(allocator: std.mem.Allocator, cfg: Config) root.CliError!void {
     if (!creds.isConfigured()) {
-        output.printError("OAuth credentials not configured in binary. Rebuild with valid credentials.") catch {};
+        output.printError("OAuth credentials not configured. Rebuild with valid credentials.") catch {};
         return error.CommandFailed;
     }
 
@@ -55,19 +55,38 @@ pub fn login(allocator: std.mem.Allocator, cfg: Config) root.CliError!void {
         .{ region.tld(), creds.scopes, creds.client_id, creds.redirect_uri },
     ) catch return error.CommandFailed;
 
-    writer.print("\nOpening browser for Zoho authorization...\n", .{}) catch {};
-    writer.print("If it doesn't open, visit:\n{s}\n\n", .{auth_url}) catch {};
-    writer.print("Waiting for authorization...\n", .{}) catch {};
-
+    writer.print("\nOpening browser for Zoho authorization...\n\n", .{}) catch {};
     oauth.openBrowser(auth_url);
 
-    const code = oauth.waitForCallback(allocator) catch {
-        output.printError("Failed to receive authorization callback.") catch {};
-        return error.CommandFailed;
+    writer.print("After authorizing, you will be redirected to a localhost URL.\n", .{}) catch {};
+    writer.print("Copy the FULL URL from your browser's address bar and paste it here.\n\n", .{}) catch {};
+    writer.print("Paste redirect URL: ", .{}) catch {};
+
+    const redirect_url = readLine() orelse {
+        output.printError("No URL provided.") catch {};
+        return error.MissingArgument;
+    };
+
+    const code = extractCodeFromUrl(redirect_url) orelse {
+        output.printError("Could not find authorization code in URL.") catch {};
+        return error.InvalidArgument;
     };
 
     exchangeCode(allocator, region, code) catch return error.CommandFailed;
     output.printSuccess("Login successful! You are now authenticated.") catch {};
+}
+
+/// Extract the "code" query parameter from a redirect URL.
+fn extractCodeFromUrl(url: []const u8) ?[]const u8 {
+    const qmark = std.mem.indexOf(u8, url, "?") orelse return null;
+    const query = url[qmark + 1 ..];
+    var iter = std.mem.splitScalar(u8, query, '&');
+    while (iter.next()) |param| {
+        if (std.mem.startsWith(u8, param, "code=")) {
+            return param["code=".len..];
+        }
+    }
+    return null;
 }
 
 /// Exchange authorization code for tokens using embedded credentials.
@@ -78,16 +97,28 @@ fn exchangeCode(allocator: std.mem.Allocator, region: @import("../model/common.z
         "code={s}&client_id={s}&client_secret={s}&grant_type=authorization_code&redirect_uri={s}",
         .{ code, creds.client_id, creds.client_secret, creds.redirect_uri },
     );
-
     const response = try http.postForm(allocator, url, body);
     const parsed = std.json.parseFromSliceLeaky(
-        struct { access_token: []const u8 = "", refresh_token: []const u8 = "", expires_in: i64 = 3600 },
+        struct { access_token: []const u8 = "", refresh_token: []const u8 = "", expires_in: i64 = 3600, @"error": []const u8 = "" },
         allocator,
         response.body,
         .{ .ignore_unknown_fields = true },
-    ) catch return error.CommandFailed;
+    ) catch {
+        output.printError("Failed to parse token response.") catch {};
+        const writer = std.fs.File.stderr().deprecatedWriter();
+        writer.print("Response: {s}\n", .{response.body}) catch {};
+        return error.CommandFailed;
+    };
 
-    if (parsed.access_token.len == 0) return error.CommandFailed;
+    if (parsed.access_token.len == 0) {
+        const writer = std.fs.File.stderr().deprecatedWriter();
+        if (parsed.@"error".len > 0) {
+            writer.print("Zoho error: {s}\n", .{parsed.@"error"}) catch {};
+        } else {
+            writer.print("Response: {s}\n", .{response.body}) catch {};
+        }
+        return error.CommandFailed;
+    }
 
     try auth.saveTokens(allocator, .{
         .access_token = parsed.access_token,
@@ -126,6 +157,16 @@ pub fn logout(allocator: std.mem.Allocator) root.CliError!void {
     output.printSuccess("Logged out. Tokens cleared.") catch {};
 }
 
+/// Read a line from stdin, trimming whitespace.
+fn readLine() ?[]const u8 {
+    var buf: [4096]u8 = undefined;
+    const reader = std.fs.File.stdin().deprecatedReader();
+    const line = reader.readUntilDelimiter(&buf, '\n') catch return null;
+    const trimmed = std.mem.trim(u8, line, " \t\r\n");
+    if (trimmed.len == 0) return null;
+    return trimmed;
+}
+
 /// Print usage help for the auth command.
 fn printUsage() void {
     const help =
@@ -149,10 +190,12 @@ test "printUsage does not crash" {
     printUsage();
 }
 
-test "execute function signature is correct" {
-    _ = &execute;
+test "extractCodeFromUrl finds code" {
+    const url = "http://localhost:8749/callback?code=abc123&location=us";
+    try std.testing.expectEqualStrings("abc123", extractCodeFromUrl(url).?);
 }
 
-test "login function signature is correct" {
-    _ = &login;
+test "extractCodeFromUrl returns null for no code" {
+    const url = "http://localhost:8749/callback?error=denied";
+    try std.testing.expectEqual(@as(?[]const u8, null), extractCodeFromUrl(url));
 }
