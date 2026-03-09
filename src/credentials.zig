@@ -7,10 +7,10 @@
 //! Set redirect URI to: http://localhost:8749/callback
 
 /// OAuth client ID from Zoho Developer Console.
-pub const client_id = "REPLACE_WITH_YOUR_CLIENT_ID";
+pub const client_id = "1000.TB3GU9Z0J6XDAXZHXYJYFJPG4XBQ0R";
 
 /// OAuth client secret from Zoho Developer Console.
-pub const client_secret = "REPLACE_WITH_YOUR_CLIENT_SECRET";
+pub const client_secret = "c005455f688bd5edd90df738d101cd30be474dcc0a";
 
 /// Localhost port for the OAuth callback server.
 pub const callback_port: u16 = 8749;
