@@ -2,6 +2,7 @@ const std = @import("std");
 const Config = @import("config.zig").Config;
 const config_mod = @import("config.zig");
 const http = @import("http.zig");
+const creds = @import("credentials.zig");
 
 /// Errors specific to authentication operations.
 pub const AuthError = error{
@@ -109,10 +110,14 @@ pub fn refreshToken(
     const url = http.buildAccountsUrl(allocator, config.region, "token") catch
         return AuthError.NetworkError;
 
+    // Use embedded credentials; fall back to config for backward compat
+    const cid = if (creds.isConfigured()) creds.client_id else config.client_id;
+    const csec = if (creds.isConfigured()) creds.client_secret else config.client_secret;
+
     const body = std.fmt.allocPrint(
         allocator,
         "refresh_token={s}&client_id={s}&client_secret={s}&grant_type=refresh_token",
-        .{ refresh_tok, config.client_id, config.client_secret },
+        .{ refresh_tok, cid, csec },
     ) catch return AuthError.NetworkError;
 
     const response = http.postForm(allocator, url, body) catch

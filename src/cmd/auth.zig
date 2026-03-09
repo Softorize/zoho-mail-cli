@@ -4,6 +4,8 @@ const Config = config.Config;
 const auth = @import("../auth.zig");
 const output = @import("../output.zig");
 const http = @import("../http.zig");
+const creds = @import("../credentials.zig");
+const oauth = @import("../oauth_server.zig");
 const root = @import("root.zig");
 
 /// Execute the "auth" subcommand.
@@ -17,7 +19,6 @@ pub fn execute(
         printUsage();
         return;
     };
-
     if (std.mem.eql(u8, subcmd, "--help") or std.mem.eql(u8, subcmd, "-h") or std.mem.eql(u8, subcmd, "help")) {
         printUsage();
         return;
@@ -37,58 +38,50 @@ pub fn execute(
     }
 }
 
-/// Perform interactive OAuth login flow.
+/// Perform browser-based OAuth login flow.
+/// Opens browser -> user authorizes -> CLI captures callback -> exchanges code.
 pub fn login(allocator: std.mem.Allocator, cfg: Config) root.CliError!void {
-    const reader = std.fs.File.stdin().deprecatedReader();
+    if (!creds.isConfigured()) {
+        output.printError("OAuth credentials not configured in binary. Rebuild with valid credentials.") catch {};
+        return error.CommandFailed;
+    }
+
     const writer = std.fs.File.stdout().deprecatedWriter();
-
-    writer.writeAll("Enter client ID: ") catch return error.CommandFailed;
-    const client_id = readLine(reader) orelse return error.MissingArgument;
-
-    writer.writeAll("Enter client secret: ") catch return error.CommandFailed;
-    const client_secret = readLine(reader) orelse return error.MissingArgument;
-
-    var new_cfg = cfg;
-    new_cfg.client_id = client_id;
-    new_cfg.client_secret = client_secret;
-    config.save(allocator, new_cfg) catch return error.CommandFailed;
+    const region = cfg.region;
 
     const auth_url = std.fmt.allocPrint(
         allocator,
-        "https://accounts.zoho.{s}/oauth/v2/auth?scope=ZohoMail.messages.ALL,ZohoMail.folders.ALL,ZohoMail.labels.ALL,ZohoMail.accounts.READ,ZohoMail.tasks.ALL,ZohoMail.organization.ALL&client_id={s}&response_type=code&access_type=offline&redirect_uri=http://localhost",
-        .{ cfg.region.tld(), client_id },
+        "https://accounts.zoho.{s}/oauth/v2/auth?scope={s}&client_id={s}&response_type=code&access_type=offline&redirect_uri={s}&prompt=consent",
+        .{ region.tld(), creds.scopes, creds.client_id, creds.redirect_uri },
     ) catch return error.CommandFailed;
 
-    writer.print("\nOpen this URL in your browser:\n{s}\n\n", .{auth_url}) catch {};
-    writer.writeAll("Enter authorization code: ") catch return error.CommandFailed;
-    const auth_code = readLine(reader) orelse return error.MissingArgument;
+    writer.print("\nOpening browser for Zoho authorization...\n", .{}) catch {};
+    writer.print("If it doesn't open, visit:\n{s}\n\n", .{auth_url}) catch {};
+    writer.print("Waiting for authorization...\n", .{}) catch {};
 
-    exchangeCode(allocator, new_cfg, auth_code) catch return error.CommandFailed;
-    output.printSuccess("Login successful!") catch {};
+    oauth.openBrowser(auth_url);
+
+    const code = oauth.waitForCallback(allocator) catch {
+        output.printError("Failed to receive authorization callback.") catch {};
+        return error.CommandFailed;
+    };
+
+    exchangeCode(allocator, region, code) catch return error.CommandFailed;
+    output.printSuccess("Login successful! You are now authenticated.") catch {};
 }
 
-/// Exchange authorization code for tokens.
-fn exchangeCode(
-    allocator: std.mem.Allocator,
-    cfg: Config,
-    code: []const u8,
-) !void {
-    const url = try http.buildAccountsUrl(allocator, cfg.region, "token");
-
+/// Exchange authorization code for tokens using embedded credentials.
+fn exchangeCode(allocator: std.mem.Allocator, region: @import("../model/common.zig").Region, code: []const u8) !void {
+    const url = try http.buildAccountsUrl(allocator, region, "token");
     const body = try std.fmt.allocPrint(
         allocator,
-        "code={s}&client_id={s}&client_secret={s}&grant_type=authorization_code&redirect_uri=http://localhost",
-        .{ code, cfg.client_id, cfg.client_secret },
+        "code={s}&client_id={s}&client_secret={s}&grant_type=authorization_code&redirect_uri={s}",
+        .{ code, creds.client_id, creds.client_secret, creds.redirect_uri },
     );
 
     const response = try http.postForm(allocator, url, body);
-
     const parsed = std.json.parseFromSliceLeaky(
-        struct {
-            access_token: []const u8 = "",
-            refresh_token: []const u8 = "",
-            expires_in: i64 = 3600,
-        },
+        struct { access_token: []const u8 = "", refresh_token: []const u8 = "", expires_in: i64 = 3600 },
         allocator,
         response.body,
         .{ .ignore_unknown_fields = true },
@@ -105,17 +98,14 @@ fn exchangeCode(
 
 /// Force token refresh.
 pub fn refresh(allocator: std.mem.Allocator, cfg: Config) root.CliError!void {
-    const tokens = (auth.loadTokens(allocator) catch
-        return error.CommandFailed) orelse {
-        output.printError("Not logged in. Run 'auth login' first.") catch {};
+    const tokens = (auth.loadTokens(allocator) catch return error.CommandFailed) orelse {
+        output.printError("Not logged in. Run 'zoho-mail auth login' first.") catch {};
         return error.CommandFailed;
     };
-
     const new_tokens = auth.refreshToken(allocator, cfg, tokens.refresh_token) catch {
         output.printError("Token refresh failed.") catch {};
         return error.CommandFailed;
     };
-
     auth.saveTokens(allocator, new_tokens) catch return error.CommandFailed;
     output.printSuccess("Token refreshed successfully.") catch {};
 }
@@ -123,11 +113,10 @@ pub fn refresh(allocator: std.mem.Allocator, cfg: Config) root.CliError!void {
 /// Print current authentication status.
 pub fn status(allocator: std.mem.Allocator) root.CliError!void {
     const is_auth = auth.isAuthenticated(allocator) catch false;
-
     if (is_auth) {
         output.printSuccess("Authenticated (token valid).") catch {};
     } else {
-        output.printWarning("Not authenticated or token expired.") catch {};
+        output.printWarning("Not authenticated or token expired. Run 'zoho-mail auth login'.") catch {};
     }
 }
 
@@ -137,29 +126,19 @@ pub fn logout(allocator: std.mem.Allocator) root.CliError!void {
     output.printSuccess("Logged out. Tokens cleared.") catch {};
 }
 
-/// Read a line from stdin, trimming whitespace.
-fn readLine(reader: anytype) ?[]const u8 {
-    var buf: [4096]u8 = undefined;
-    const line = reader.readUntilDelimiter(&buf, '\n') catch return null;
-    const trimmed = std.mem.trim(u8, line, " \t\r\n");
-    if (trimmed.len == 0) return null;
-    return trimmed;
-}
-
 /// Print usage help for the auth command.
 fn printUsage() void {
     const help =
         \\Usage: zoho-mail auth <subcommand>
         \\
         \\Subcommands:
-        \\  login    Authenticate with Zoho (interactive)
+        \\  login    Authenticate with Zoho (opens browser)
         \\  refresh  Force token refresh
         \\  status   Show authentication status
         \\  logout   Clear stored tokens
         \\
     ;
-    const stdout = std.fs.File.stdout().deprecatedWriter();
-    stdout.writeAll(help) catch {};
+    std.fs.File.stdout().deprecatedWriter().writeAll(help) catch {};
 }
 
 // ---------------------------------------------------------------------------
@@ -170,10 +149,10 @@ test "printUsage does not crash" {
     printUsage();
 }
 
-test "readLine returns null for empty" {
-    _ = &readLine;
-}
-
 test "execute function signature is correct" {
     _ = &execute;
+}
+
+test "login function signature is correct" {
+    _ = &login;
 }
