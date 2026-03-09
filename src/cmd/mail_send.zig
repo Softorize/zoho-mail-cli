@@ -11,6 +11,7 @@ pub fn send(allocator: std.mem.Allocator, cfg: Config, flags: root.GlobalFlags, 
     var body: []const u8 = "";
     var cc: []const u8 = "";
     var bcc: []const u8 = "";
+    var from: ?[]const u8 = null;
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "--to")) {
             to = args.next() orelse return error.MissingArgument;
@@ -22,6 +23,8 @@ pub fn send(allocator: std.mem.Allocator, cfg: Config, flags: root.GlobalFlags, 
             cc = args.next() orelse return error.MissingArgument;
         } else if (std.mem.eql(u8, arg, "--bcc")) {
             bcc = args.next() orelse return error.MissingArgument;
+        } else if (std.mem.eql(u8, arg, "--from")) {
+            from = args.next() orelse return error.MissingArgument;
         }
     }
     const to_addr = to orelse {
@@ -29,14 +32,29 @@ pub fn send(allocator: std.mem.Allocator, cfg: Config, flags: root.GlobalFlags, 
         return error.MissingArgument;
     };
     const aid = acctId(cfg, flags);
+    // Look up account email if --from not provided
+    const from_addr = from orelse blk: {
+        const accts = @import("../api/accounts.zig").listAccounts(allocator, cfg) catch {
+            output.printError("Could not look up account email. Use --from to specify sender.") catch {};
+            return error.CommandFailed;
+        };
+        for (accts) |acct| {
+            if (std.mem.eql(u8, acct.accountId, aid)) break :blk acct.mailboxAddress;
+        }
+        output.printError("Account not found. Use --from to specify sender.") catch {};
+        return error.CommandFailed;
+    };
     _ = api.sendMessage(allocator, cfg, aid, .{
-        .fromAddress = aid,
+        .fromAddress = from_addr,
         .toAddress = to_addr,
         .subject = subject,
         .content = body,
         .ccAddress = cc,
         .bccAddress = bcc,
-    }) catch return error.CommandFailed;
+    }) catch {
+        output.printError("Failed to send message. Check auth token and recipient address.") catch {};
+        return error.CommandFailed;
+    };
     output.printSuccess("Message sent successfully.") catch {};
 }
 
